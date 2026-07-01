@@ -9,7 +9,8 @@ const raw = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'as
 const svg = raw
   .replace(/<!--[\s\S]*?-->\s*/g, '')
   .replace('stroke="currentColor"', 'stroke="white"')
-  .replace(/\n\s*/g, '')
+  .replace(/\s+/g, ' ')
+  .replace(/> </g, '><')
   .trim();
 const logo = encodeURIComponent('data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64'));
 const v = version.replaceAll('-', '--');
