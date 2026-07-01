@@ -8,14 +8,63 @@ on tainted execution paths, many APIs return values that cannot be used in arith
 comparisons, concatenation, or as table keys without throwing a Lua error — often only in
 combat, where you can't debug. taintlint finds those usages **statically**, in your editor or CI.
 
-**Status: pre-alpha / technical spike.** Nothing to install yet.
+**Status: v0.1 core, pre-release.** Working CLI, not yet published to npm. Requires Node ≥ 24
+(runs TypeScript natively).
+
+## Usage
+
+```
+node src/cli.ts <addon-dir|file.toc|file.lua> [options]
+
+--format json          machine-readable output
+--min-severity <s>     error | warning | info (default: info)
+--update-baseline      freeze current findings; CI then fails only on NEW ones
+--baseline <path>      baseline location (default: <root>/taintlint-baseline.json)
+```
+
+Exit code 1 when non-baselined `error`-severity findings exist.
+
+Example, against a real addon:
+
+```
+core.lua:303:4   ERROR   SV012  registering COMBAT_LOG_EVENT_UNFILTERED directly errors on 12.0+ — use C_CombatLog
+ExCD2.lua:5931:16 ERROR  SV001  arithmetic on UnitHealth() result throws when the value is secret
+Reminder.lua:2528:86 WARNING SV005  UnitName() result used as a table key throws when the value is secret (conditionally secret)
+```
+
+Suppress a finding you have judged safe (reason required by convention):
+
+```lua
+local hp = UnitHealth(u) / m  -- taintlint: allow SV001 (classic-only path)
+```
+
+## What it checks (v0.1 — L0 rules)
+
+| Rule | Detects |
+|------|---------|
+| SV001 | arithmetic on a secretable API result |
+| SV002 | comparison of a secretable API result |
+| SV003 | concatenation / `tostring()` of a secretable API result |
+| SV004 | `#` length of a secretable API result |
+| SV005 | secretable API result used as a table key |
+| SV006 | indexing a possibly-secret table (aura data etc.) |
+| SV007 | calling a possibly-secret value |
+| SV010 | helper returning a raw secretable value (propagation) |
+| SV011 | `local issecretvalue = issecretvalue` without a pre-12.0 fallback |
+| SV012 | direct `COMBAT_LOG_EVENT[_UNFILTERED]` registration |
+
+Two confidence tiers: APIs documented `SecretReturns = true` report as **error**; conditionally
+secret APIs (`SecretWhen*`) report as **warning**, with a unit-token heuristic (identity
+restrictions never apply to `player`/`party`/`raid` literals, so those are not flagged).
+
+The secretable-API database (`db/`) is generated per game build from Blizzard's own
+`Blizzard_APIDocumentationGenerated`. Current: 12.0.7 (68275).
 
 ## Planned
 
-- `npx taintlint <addon-dir>` — lint an addon (parses the `.toc`, checks every file)
-- Per-build database of secretable APIs, auto-generated from `Blizzard_APIDocumentationGenerated`
-- Baseline file so existing addons can adopt without turning CI red
-- GitHub Action + badge (`secret-safe | 12.0.7`)
+- npm package (`npx taintlint`), GitHub Action + badge (`secret-safe | 12.0.7`)
+- L1: intra-function data-flow with guard awareness (`issecretvalue`, pcall probes)
+- SV008/SV009: boss-mod callback args, `loadstring`/ForceTaint_Strong contexts
 - `taintlint explain "<BugSack error>"` — from error message to rule and fix
 - `taintlint --target <build>` — see what breaks in the next patch before it ships
 

@@ -4,6 +4,13 @@
   "description": "Static analysis for WoW addon Lua — catch secret value errors before they hit the raid.",
   "type": "module",
   "license": "MIT",
+  "bin": {
+    "taintlint": "src/cli.ts"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "lint": "node src/cli.ts"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -19,5 +26,10 @@
   ],
   "dependencies": {
     "luaparse": "^0.3.1"
+  },
+  "devDependencies": {
+    "@types/luaparse": "^0.2.13",
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3"
   }
 }
