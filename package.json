@@ -1,0 +1,23 @@
+{
+  "name": "taintlint",
+  "version": "0.0.0",
+  "description": "Static analysis for WoW addon Lua — catch secret value errors before they hit the raid.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "wow",
+    "world-of-warcraft",
+    "addon",
+    "lua",
+    "lint",
+    "static-analysis",
+    "secret-values",
+    "taint"
+  ],
+  "dependencies": {
+    "luaparse": "^0.3.1"
+  }
+}
