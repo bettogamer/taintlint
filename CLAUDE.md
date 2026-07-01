@@ -40,6 +40,13 @@ North star: *no addon should ever discover a secret-value error in a raid.*
   helper, missing `issecretvalue` shim, direct CLEU registration).
 - Spike evidence and detailed lessons: `spike/RESULTS.md`.
 
+## When a new WoW build ships
+
+Follow **`docs/UPDATING-DB.md`** verbatim: `node scripts/update-db.mjs [--ref ptr]` →
+review the printed diff (STOP on `⚠ NEW FLAG NAMES`: update `tierOf()`/heuristics first,
+never guess flag semantics) → tests + MRT benchmark (0 new errors) → atomic `db: <version>
+(<build>)` commit, engine changes in a separate commit before it.
+
 ## Workflow
 
 - **Trunk-based**: `main` is the only permanent branch and stays green. Short-lived

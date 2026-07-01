@@ -2,3 +2,5 @@ node_modules/
 spike/.cache/
 *.log
 CLAUDE.local.md
+
+.cache/
