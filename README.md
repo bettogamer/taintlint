@@ -1,5 +1,7 @@
 # taintlint
 
+[![ci](https://github.com/bettogamer/taintlint/actions/workflows/ci.yml/badge.svg)](https://github.com/bettogamer/taintlint/actions/workflows/ci.yml)
+
 > Static analysis for World of Warcraft addon Lua — catch **secret value** errors before they
 > hit the raid.
 
@@ -57,13 +59,19 @@ Two confidence tiers: APIs documented `SecretReturns = true` report as **error**
 secret APIs (`SecretWhen*`) report as **warning**, with a unit-token heuristic (identity
 restrictions never apply to `player`/`party`/`raid` literals, so those are not flagged).
 
+**L1 data-flow** (v0.2): secrets are tracked through local variables inside a function —
+`local hp = UnitHealth(u); ... hp / max` is caught even though the call and the arithmetic are
+apart. Guard-aware: values checked with `issecretvalue`/`issecrettable`/`canaccess*` anywhere in
+scope are not reported, reassignment kills the track, aliases share it, shadowing is respected.
+L1 findings report one severity step below L0 (warning/info), so they never break a CI gate on
+their own.
+
 The secretable-API database (`db/`) is generated per game build from Blizzard's own
 `Blizzard_APIDocumentationGenerated`. Current: 12.0.7 (68275).
 
 ## Planned
 
 - npm package (`npx taintlint`), GitHub Action + badge (`secret-safe | 12.0.7`)
-- L1: intra-function data-flow with guard awareness (`issecretvalue`, pcall probes)
 - SV008/SV009: boss-mod callback args, `loadstring`/ForceTaint_Strong contexts
 - `taintlint explain "<BugSack error>"` — from error message to rule and fix
 - `taintlint --target <build>` — see what breaks in the next patch before it ships

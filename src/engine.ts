@@ -42,7 +42,11 @@ export function lintSource(source: string, file: string, db: ApiDb): Finding[] {
     ];
   }
   const ctx = new RuleContext(db, file);
-  walk(parsed.ast, (node) => ctx.visit(node));
+  walk(
+    parsed.ast,
+    (node) => ctx.enter(node),
+    (node) => ctx.exit(node)
+  );
   const suppressed = suppressions(parsed.comments);
   return ctx.results().filter((f) => !suppressed.get(f.line)?.has(f.rule));
 }

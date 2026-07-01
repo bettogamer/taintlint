@@ -1,20 +1,53 @@
-import type { ApiDb } from './apidb.ts';
+﻿import type { ApiDb } from './apidb.ts';
 import type { Finding, LuaNode, Severity } from './types.ts';
 
 const ARITH_OPS = new Set(['+', '-', '*', '/', '%', '^']);
 const COMPARE_OPS = new Set(['==', '~=', '<', '>', '<=', '>=']);
 const CLEU_EVENTS = new Set(['COMBAT_LOG_EVENT', 'COMBAT_LOG_EVENT_UNFILTERED']);
+const GUARD_FNS = new Set(['issecretvalue', 'issecrettable', 'canaccessvalue', 'canaccesstable']);
 
 // Unit tokens that are always player-controlled units: identity restrictions
-// (SecretWhenUnitIdentityRestricted) never apply to them. Deliberately narrow —
+// (SecretWhenUnitIdentityRestricted) never apply to them. Deliberately narrow â€”
 // "target"/"focus"/"boss1" can be arbitrary units, so they are NOT here.
 const SAFE_UNIT_TOKENS =
   /^(player|pet|vehicle|party[1-4]|partypet[1-4]|raid([1-9]|[1-3][0-9]|40)|raidpet([1-9]|[1-3][0-9]|40))$/i;
+
+// Nodes that open a lexical scope for local declarations.
+const SCOPE_NODES = new Set([
+  'Chunk',
+  'FunctionDeclaration',
+  'IfClause',
+  'ElseifClause',
+  'ElseClause',
+  'WhileStatement',
+  'DoStatement',
+  'RepeatStatement',
+  'ForNumericStatement',
+  'ForGenericStatement',
+]);
 
 interface SecretableHit {
   api: string;
   tier: 'unconditional' | 'conditional';
 }
+
+/**
+ * One tracked secret-holding value. Shared by reference across aliases
+ * (`local b = a`), so guarding either name clears both. Findings against it are
+ * held as candidates and only emitted if the value is never guarded (coarse,
+ * whole-function guard recognition: precision over coverage).
+ */
+interface TaintInfo {
+  hit: SecretableHit;
+  guarded: boolean;
+  candidates: Finding[];
+}
+
+interface VarEntry {
+  taint: TaintInfo | null;
+}
+
+type Scope = Map<string, VarEntry>;
 
 function stringLiteral(node: LuaNode | undefined): string | null {
   if (!node || node.type !== 'StringLiteral') return null;
@@ -53,15 +86,83 @@ export class RuleContext {
   private findings: Finding[] = [];
   private db: ApiDb;
   private file: string;
+  private scopes: Scope[] = [];
+  private taints: TaintInfo[] = [];
 
   constructor(db: ApiDb, file: string) {
     this.db = db;
     this.file = file;
   }
 
+  /** Call after the walk: emits L1 candidates whose value was never guarded. */
   results(): Finding[] {
-    return this.findings;
+    for (const t of this.taints) {
+      if (!t.guarded) this.findings.push(...t.candidates);
+    }
+    const out = this.findings;
+    this.findings = [];
+    this.taints = [];
+    return out.sort((a, b) => a.line - b.line || a.column - b.column);
   }
+
+  // ---- scope / data-flow machinery (L1) ------------------------------------
+
+  private currentScope(): Scope {
+    return this.scopes[this.scopes.length - 1]!;
+  }
+
+  private resolve(name: string): VarEntry | undefined {
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      const entry = this.scopes[i]!.get(name);
+      if (entry) return entry;
+    }
+    return undefined;
+  }
+
+  private declareVar(name: string, taint: TaintInfo | null): void {
+    this.currentScope().set(name, { taint });
+  }
+
+  private newTaint(hit: SecretableHit): TaintInfo {
+    const t: TaintInfo = { hit, guarded: false, candidates: [] };
+    this.taints.push(t);
+    return t;
+  }
+
+  /** Taint carried by an initializer/assignment RHS expression, if any. */
+  private taintOfExpr(expr: LuaNode | undefined): TaintInfo | null {
+    if (!expr) return null;
+    const hit = this.secretableCall(expr);
+    if (hit) return this.newTaint(hit);
+    if (expr.type === 'Identifier') {
+      return this.resolve(expr.name as string)?.taint ?? null;
+    }
+    return null;
+  }
+
+  /**
+   * Taints for an aligned var/init list. Lua expands the *last* expression to
+   * fill remaining targets (`local name, realm = UnitName(u)`), so trailing
+   * variables inherit the last initializer's taint.
+   */
+  private alignedTaints(count: number, inits: LuaNode[]): (TaintInfo | null)[] {
+    const out: (TaintInfo | null)[] = [];
+    for (let i = 0; i < count; i++) {
+      if (i < inits.length) out.push(this.taintOfExpr(inits[i]));
+      else if (inits.length > 0 && isCall(inits[inits.length - 1])) out.push(this.taintOfExpr(inits[inits.length - 1]));
+      else out.push(null);
+    }
+    return out;
+  }
+
+  /** If `node` is an Identifier bound to an unguarded tracked secret, return it. */
+  private taintedLocal(node: LuaNode | undefined): { name: string; taint: TaintInfo } | null {
+    if (!node || node.type !== 'Identifier') return null;
+    const taint = this.resolve(node.name as string)?.taint;
+    return taint ? { name: node.name as string, taint } : null;
+  }
+
+  // ---- classification -------------------------------------------------------
 
   /** If `node` is a call to a return-side secretable API (heuristics applied), classify it. */
   private secretableCall(node: LuaNode | undefined): SecretableHit | null {
@@ -86,6 +187,8 @@ export class RuleContext {
     return { api: name, tier: entry.tier };
   }
 
+  // ---- reporting -------------------------------------------------------------
+
   private report(rule: string, node: LuaNode, api: string | null, message: string, severity: Severity): void {
     const loc = node.loc?.start ?? { line: 0, column: 0 };
     this.findings.push({ rule, severity, file: this.file, line: loc.line, column: loc.column + 1, api, message });
@@ -97,101 +200,175 @@ export class RuleContext {
     this.report(rule, node, hit.api, `${message}${tierNote}`, sev);
   }
 
-  visit(node: LuaNode): void {
+  /**
+   * Check one operand: direct secretable call (L0, full severity) or a tracked
+   * local (L1, one severity step lower, emission deferred until we know the
+   * value is never guarded in its function).
+   */
+  private checkOperand(rule: string, node: LuaNode | undefined, verb: string, fixedSeverity?: Severity): void {
+    if (!node) return;
+    const direct = this.secretableCall(node);
+    if (direct) {
+      this.reportHit(rule, node, direct, `${verb} ${direct.api}() result throws when the value is secret`, fixedSeverity);
+      return;
+    }
+    const local = this.taintedLocal(node);
+    if (local) {
+      const { hit } = local.taint;
+      const sev: Severity = fixedSeverity ?? (hit.tier === 'unconditional' ? 'warning' : 'info');
+      const tierNote = hit.tier === 'conditional' ? ', conditionally secret' : '';
+      const loc = node.loc?.start ?? { line: 0, column: 0 };
+      local.taint.candidates.push({
+        rule,
+        severity: sev,
+        file: this.file,
+        line: loc.line,
+        column: loc.column + 1,
+        api: hit.api,
+        message: `${verb} local '${local.name}' holding ${hit.api}() result throws when the value is secret (data-flow${tierNote})`,
+      });
+    }
+  }
+
+  // ---- traversal hooks -------------------------------------------------------
+
+  enter(node: LuaNode): void {
+    if (SCOPE_NODES.has(node.type)) {
+      this.scopes.push(new Map());
+      if (node.type === 'FunctionDeclaration') {
+        for (const p of (node.parameters as LuaNode[] | undefined) ?? []) {
+          if (p.type === 'Identifier') this.declareVar(p.name as string, null);
+        }
+      } else if (node.type === 'ForNumericStatement') {
+        const v = node.variable as LuaNode;
+        if (v?.type === 'Identifier') this.declareVar(v.name as string, null);
+      } else if (node.type === 'ForGenericStatement') {
+        for (const v of (node.variables as LuaNode[] | undefined) ?? []) {
+          if (v.type === 'Identifier') this.declareVar(v.name as string, null);
+        }
+      }
+    }
+    this.visit(node);
+  }
+
+  exit(node: LuaNode): void {
+    if (SCOPE_NODES.has(node.type)) this.scopes.pop();
+  }
+
+  private visit(node: LuaNode): void {
     switch (node.type) {
+      case 'LocalStatement': {
+        const vars = (node.variables as LuaNode[] | undefined) ?? [];
+        const inits = (node.init as LuaNode[] | undefined) ?? [];
+        // SV011: local issecretvalue = issecretvalue with no pre-12.0 fallback.
+        vars.forEach((v, i) => {
+          const name = v.name as string;
+          const init = inits[i];
+          if (GUARD_FNS.has(name) && init && init.type === 'Identifier' && init.name === name) {
+            this.report(
+              'SV011',
+              v,
+              name,
+              `local ${name} = ${name} without a fallback is nil on pre-12.0 clients â€” add: or function() return false end`,
+              'info'
+            );
+          }
+        });
+        // Taints are computed against the OUTER bindings (Lua evaluates
+        // initializers before the new locals exist), then declared.
+        const taints = this.alignedTaints(vars.length, inits);
+        vars.forEach((v, i) => {
+          if (v.type === 'Identifier') this.declareVar(v.name as string, taints[i] ?? null);
+        });
+        break;
+      }
+      case 'AssignmentStatement': {
+        const targets = (node.variables as LuaNode[] | undefined) ?? [];
+        const values = (node.init as LuaNode[] | undefined) ?? [];
+        const taints = this.alignedTaints(targets.length, values);
+        targets.forEach((t, i) => {
+          if (t.type !== 'Identifier') return;
+          const entry = this.resolve(t.name as string);
+          // Reassignment replaces the binding: new taint or a kill.
+          if (entry) entry.taint = taints[i] ?? null;
+        });
+        break;
+      }
       case 'BinaryExpression': {
         const op = node.operator as string;
         const rule = ARITH_OPS.has(op) ? 'SV001' : COMPARE_OPS.has(op) ? 'SV002' : op === '..' ? 'SV003' : null;
         if (!rule) break;
         const verb = rule === 'SV001' ? 'arithmetic on' : rule === 'SV002' ? 'comparison of' : 'concatenation of';
-        for (const side of [node.left as LuaNode, node.right as LuaNode]) {
-          const hit = this.secretableCall(side);
-          if (hit) this.reportHit(rule, side, hit, `${verb} ${hit.api}() result throws when the value is secret`);
-        }
+        this.checkOperand(rule, node.left as LuaNode, verb);
+        this.checkOperand(rule, node.right as LuaNode, verb);
         break;
       }
       case 'UnaryExpression': {
         const arg = node.argument as LuaNode;
-        const hit = this.secretableCall(arg);
-        if (!hit) break;
-        if (node.operator === '-') {
-          this.reportHit('SV001', arg, hit, `arithmetic on ${hit.api}() result throws when the value is secret`);
-        } else if (node.operator === '#') {
-          this.reportHit('SV004', arg, hit, `length of ${hit.api}() result throws when the value is secret`);
-        }
+        if (node.operator === '-') this.checkOperand('SV001', arg, 'arithmetic on');
+        else if (node.operator === '#') this.checkOperand('SV004', arg, 'length of');
         break;
       }
       case 'IndexExpression': {
-        const keyHit = this.secretableCall(node.index as LuaNode);
-        if (keyHit)
-          this.reportHit('SV005', node.index as LuaNode, keyHit, `${keyHit.api}() result used as a table key throws when the value is secret`);
-        const baseHit = this.secretableCall(node.base as LuaNode);
-        if (baseHit)
-          this.reportHit('SV006', node.base as LuaNode, baseHit, `indexing the ${baseHit.api}() result throws when the table is secret`);
+        this.checkOperand('SV005', node.index as LuaNode, 'table key from');
+        this.checkOperand('SV006', node.base as LuaNode, 'indexing');
         break;
       }
       case 'TableKey': {
-        const hit = this.secretableCall(node.key as LuaNode);
-        if (hit)
-          this.reportHit('SV005', node.key as LuaNode, hit, `${hit.api}() result used as a table key throws when the value is secret`);
+        this.checkOperand('SV005', node.key as LuaNode, 'table key from');
         break;
       }
       case 'MemberExpression': {
-        const hit = this.secretableCall(node.base as LuaNode);
-        if (hit)
-          this.reportHit('SV006', node.base as LuaNode, hit, `indexing the ${hit.api}() result throws when the table is secret`);
+        this.checkOperand('SV006', node.base as LuaNode, 'indexing');
         break;
       }
       case 'CallExpression':
       case 'StringCallExpression':
       case 'TableCallExpression': {
-        // SV007: calling the result of a secretable call.
-        const baseHit = this.secretableCall(node.base as LuaNode);
-        if (baseHit)
-          this.reportHit('SV007', node.base as LuaNode, baseHit, `calling the ${baseHit.api}() result throws when the value is secret`);
-        // SV003: tostring() of a secretable call.
+        // Guard recognition: issecretvalue(x)/issecrettable(x)/canaccess*(x)
+        // anywhere in the file marks x's value as handled (coarse on purpose).
         const name = calleeName(node);
-        if (name === 'tostring') {
-          const hit = this.secretableCall(firstArgument(node));
-          if (hit)
-            this.reportHit('SV003', firstArgument(node)!, hit, `tostring() of ${hit.api}() result throws when the value is secret`);
+        if (name && GUARD_FNS.has(name)) {
+          const local = this.taintedLocal(firstArgument(node));
+          if (local) local.taint.guarded = true;
+          break; // a guard call is never itself a violation
         }
+        // SV007: calling a (possibly) secret value.
+        this.checkOperand('SV007', node.base as LuaNode, 'calling');
+        // SV003: tostring() of a secretable value.
+        if (name === 'tostring') this.checkOperand('SV003', firstArgument(node), 'tostring() of');
         // SV012: direct CLEU registration errors on 12.0+.
         if (node.type === 'CallExpression') {
           const base = node.base as LuaNode;
           if (base.type === 'MemberExpression' && (base.identifier as LuaNode).name === 'RegisterEvent') {
             const ev = stringLiteral(firstArgument(node));
             if (ev && CLEU_EVENTS.has(ev))
-              this.report('SV012', node, null, `registering ${ev} directly errors on 12.0+ — use C_CombatLog`, 'error');
+              this.report('SV012', node, null, `registering ${ev} directly errors on 12.0+ â€” use C_CombatLog`, 'error');
           }
         }
         break;
       }
       case 'ReturnStatement': {
         for (const arg of (node.arguments as LuaNode[] | undefined) ?? []) {
-          const hit = this.secretableCall(arg);
-          if (hit)
-            this.reportHit('SV010', arg, hit, `returning the raw ${hit.api}() result propagates the secret to every caller`, 'info');
-        }
-        break;
-      }
-      case 'LocalStatement': {
-        const vars = (node.variables as LuaNode[] | undefined) ?? [];
-        const inits = (node.init as LuaNode[] | undefined) ?? [];
-        vars.forEach((v, i) => {
-          const name = v.name as string;
-          if (name !== 'issecretvalue' && name !== 'issecrettable' && name !== 'canaccessvalue' && name !== 'canaccesstable') return;
-          const init = inits[i];
-          if (init && init.type === 'Identifier' && init.name === name) {
-            this.report(
-              'SV011',
-              v,
-              name,
-              `local ${name} = ${name} without a fallback is nil on pre-12.0 clients — add: or function() return false end`,
-              'info'
-            );
+          const direct = this.secretableCall(arg);
+          if (direct) {
+            this.report('SV010', arg, direct.api, `returning the raw ${direct.api}() result propagates the secret to every caller`, 'info');
+            continue;
           }
-        });
+          const local = this.taintedLocal(arg);
+          if (local) {
+            const loc = arg.loc?.start ?? { line: 0, column: 0 };
+            local.taint.candidates.push({
+              rule: 'SV010',
+              severity: 'info',
+              file: this.file,
+              line: loc.line,
+              column: loc.column + 1,
+              api: local.taint.hit.api,
+              message: `returning local '${local.name}' holding ${local.taint.hit.api}() result propagates the secret to every caller (data-flow)`,
+            });
+          }
+        }
         break;
       }
     }
