@@ -3,14 +3,14 @@
 Referencia del plan: `Workspace/ideas/secretlint/FOUNDING.md` §11 "Plan del spike".
 Entorno: Node v24.18.0 portable (`Workspace/.tools/node`), luaparse 0.3.1.
 
-## Veredicto general: la arquitectura queda VALIDADA. Adelante con v0.1.
+## Veredicto general: 4/4 — la arquitectura queda VALIDADA. Adelante con v0.1.
 
 | # | Pregunta | Resultado |
 |---|----------|-----------|
 | S1 | ¿luaparse parsea Lua real de addons? | ✅ **PASA** — 581 archivos (MRT 50, Beacon 264, WeakAuras 267), 0 fallos, ~2.7 s total |
 | S2 | ¿`Blizzard_APIDocumentationGenerated` es extraíble? | ✅ **PASA** — 3,589 funciones + 91 eventos con flags de secrets; 0 fallos de parseo |
 | S3 | ¿Las reglas L0 encuentran algo real? | ✅ **PASA con lecciones** — 1 positivo verdadero en WA; el benchmark MRT expone el diseño de tiers necesario (abajo) |
-| S4 | ¿CF/WoWInterface renderizan badges? | ⏳ **PENDIENTE — requiere cuenta del usuario** (pegar una imagen shields.io en una descripción de prueba) |
+| S4 | ¿CF/WoWInterface renderizan badges? | ✅ **PASA** (2026-07-01, verificado por el usuario) — el SVG de shields.io renderiza correctamente; no hace falta el plan B de PNG |
 
 ## S1 — detalle
 
@@ -79,10 +79,19 @@ de tabla), corrido sobre WeakAuras 5.21.1 (sin portar) y MRT (portado, benchmark
 - Node portable en `Workspace/.tools/node` (v24.18.0). Para desarrollo serio: instalar Node
   como prefiera el usuario (`winget install OpenJS.NodeJS.LTS`).
 
+## S4 — detalle
+
+Verificado por el usuario (2026-07-01): el badge SVG de shields.io renderiza bien. Las tres
+variantes quedan aprobadas como diseño base:
+- Dev / GitHub README: `https://img.shields.io/badge/taintlint-secret--safe_12.0.7-2ea44f`
+- Jugador / CurseForge: `https://img.shields.io/badge/Secret--Safe-12.0.7-2ea44f?style=for-the-badge`
+- Contador (para la Action): `https://img.shields.io/badge/taintlint-0_issues-2ea44f`
+Colores: verde `2ea44f` = passing; `orange` = N issues; `red` = failing.
+
 ## Próximos pasos (v0.1)
 
-1. S4 (badge en CurseForge/WoWInterface) — manual, usuario.
-2. Fixtures por regla (contrato, antes que el código de cada regla) — FOUNDING §11.
-3. Núcleo v0.1: walker con scope tracking (base de L1), las 12 reglas L0, tiers, baseline,
+1. Fixtures por regla (contrato, antes que el código de cada regla) — FOUNDING §11.
+2. Núcleo v0.1: walker con scope tracking (base de L1), las 12 reglas L0, tiers, baseline,
    `--format json`, exit codes.
-4. PR upstream a luaparse (`break;`) o decisión de vendorear.
+3. PR upstream a luaparse (`break;`) o decisión de vendorear.
+4. Publicar el repo en GitHub (decisión "público día 1" ya tomada — acción del usuario).
