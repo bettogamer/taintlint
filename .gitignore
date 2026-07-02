@@ -4,3 +4,4 @@ spike/.cache/
 CLAUDE.local.md
 
 .cache/
+dist/
