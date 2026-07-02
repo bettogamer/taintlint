@@ -29,7 +29,12 @@ const SCOPE_NODES = new Set([
 interface SecretableHit {
   api: string;
   tier: 'unconditional' | 'conditional';
+  /** How to name the value in messages; defaults to "<api>() result". */
+  label?: string;
 }
+
+const BOSSMOD_REGISTRARS = new Set(['RegisterMessage', 'RegisterCallback']);
+const DYNAMIC_COMPILERS = new Set(['loadstring', 'load', 'RunScript']);
 
 /**
  * One tracked secret-holding value. Shared by reference across aliases
@@ -41,6 +46,10 @@ interface TaintInfo {
   hit: SecretableHit;
   guarded: boolean;
   candidates: Finding[];
+  /** Findings from this taint report as this rule instead of the operation's. */
+  ruleOverride?: string;
+  /** Fixed severity for findings from this taint (e.g. SV008 → warning). */
+  severityOverride?: Severity;
 }
 
 interface VarEntry {
@@ -88,6 +97,8 @@ export class RuleContext {
   private file: string;
   private scopes: Scope[] = [];
   private taints: TaintInfo[] = [];
+  private bossmodHandlers = new Set<LuaNode>();
+  private compiledCodeRegex: RegExp | undefined;
 
   constructor(db: ApiDb, file: string) {
     this.db = db;
@@ -121,6 +132,15 @@ export class RuleContext {
 
   private declareVar(name: string, taint: TaintInfo | null): void {
     this.currentScope().set(name, { taint });
+  }
+
+  /** Regex matching any return-side secretable API name followed by a call paren. */
+  private compiledRegex(): RegExp {
+    if (!this.compiledCodeRegex) {
+      const names = [...this.db.functions.keys()].map((n) => n.replace(/\./g, '\\.'));
+      this.compiledCodeRegex = new RegExp(`\\b(?:${names.join('|')})\\s*\\(`, 'g');
+    }
+    return this.compiledCodeRegex;
   }
 
   private newTaint(hit: SecretableHit): TaintInfo {
@@ -215,17 +235,19 @@ export class RuleContext {
     const local = this.taintedLocal(node);
     if (local) {
       const { hit } = local.taint;
-      const sev: Severity = fixedSeverity ?? (hit.tier === 'unconditional' ? 'warning' : 'info');
-      const tierNote = hit.tier === 'conditional' ? ', conditionally secret' : '';
+      const sev: Severity =
+        local.taint.severityOverride ?? fixedSeverity ?? (hit.tier === 'unconditional' ? 'warning' : 'info');
+      const what = hit.label ?? `${hit.api}() result`;
+      const tierNote = hit.tier === 'conditional' && !hit.label ? ', conditionally secret' : '';
       const loc = node.loc?.start ?? { line: 0, column: 0 };
       local.taint.candidates.push({
-        rule,
+        rule: local.taint.ruleOverride ?? rule,
         severity: sev,
         file: this.file,
         line: loc.line,
         column: loc.column + 1,
         api: hit.api,
-        message: `${verb} local '${local.name}' holding ${hit.api}() result throws when the value is secret (data-flow${tierNote})`,
+        message: `${verb} local '${local.name}' holding ${what} throws when the value is secret (data-flow${tierNote})`,
       });
     }
   }
@@ -236,9 +258,20 @@ export class RuleContext {
     if (SCOPE_NODES.has(node.type)) {
       this.scopes.push(new Map());
       if (node.type === 'FunctionDeclaration') {
-        for (const p of (node.parameters as LuaNode[] | undefined) ?? []) {
-          if (p.type === 'Identifier') this.declareVar(p.name as string, null);
-        }
+        const isBossmod = this.bossmodHandlers.has(node);
+        ((node.parameters as LuaNode[] | undefined) ?? []).forEach((p, i) => {
+          if (p.type !== 'Identifier') return;
+          // Boss-mod callback args (except the event name itself) can arrive as
+          // secrets on 12.0.x; operating them unguarded throws mid-encounter.
+          if (isBossmod && i > 0) {
+            const t = this.newTaint({ api: 'BossModCallback', tier: 'conditional', label: 'a boss-mod callback argument' });
+            t.ruleOverride = 'SV008';
+            t.severityOverride = 'warning';
+            this.declareVar(p.name as string, t);
+          } else {
+            this.declareVar(p.name as string, null);
+          }
+        });
       } else if (node.type === 'ForNumericStatement') {
         const v = node.variable as LuaNode;
         if (v?.type === 'Identifier') this.declareVar(v.name as string, null);
@@ -337,6 +370,38 @@ export class RuleContext {
         this.checkOperand('SV007', node.base as LuaNode, 'calling');
         // SV003: tostring() of a secretable value.
         if (name === 'tostring') this.checkOperand('SV003', firstArgument(node), 'tostring() of');
+        // SV008: boss-mod callback registration — taint the handler's args.
+        if (node.type === 'CallExpression') {
+          const base = node.base as LuaNode;
+          const registrar = base.type === 'MemberExpression' ? ((base.identifier as LuaNode).name as string) : null;
+          if (registrar && BOSSMOD_REGISTRARS.has(registrar)) {
+            const callArgs = (node.arguments as LuaNode[] | undefined) ?? [];
+            const eventArg = callArgs.find((a) => {
+              const s = stringLiteral(a);
+              return s !== null && (s.startsWith('BigWigs_') || s.startsWith('DBM_'));
+            });
+            if (eventArg) {
+              for (const a of callArgs) if (a.type === 'FunctionDeclaration') this.bossmodHandlers.add(a);
+            }
+          }
+        }
+        // SV009: string literals compiled at runtime run under ForceTaint_Strong,
+        // where EVERY secretable API returns secrets — always, even out of combat.
+        if (name && DYNAMIC_COMPILERS.has(name)) {
+          const codeArg = firstArgument(node);
+          if (codeArg?.type === 'StringLiteral') {
+            const code = (codeArg.raw as string) ?? '';
+            for (const api of new Set(code.match(this.compiledRegex()) ?? [])) {
+              this.report(
+                'SV009',
+                codeArg,
+                api.replace(/\s*\($/, ''),
+                `${api.replace(/\s*\($/, '')}() inside ${name}()'d code runs under ForceTaint_Strong and ALWAYS returns a secret, even out of combat`,
+                'warning'
+              );
+            }
+          }
+        }
         // SV012: direct CLEU registration errors on 12.0+.
         if (node.type === 'CallExpression') {
           const base = node.base as LuaNode;

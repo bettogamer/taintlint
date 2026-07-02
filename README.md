@@ -51,6 +51,8 @@ local hp = UnitHealth(u) / m  -- taintlint: allow SV001 (classic-only path)
 | SV005 | secretable API result used as a table key |
 | SV006 | indexing a possibly-secret table (aura data etc.) |
 | SV007 | calling a possibly-secret value |
+| SV008 | boss-mod callback args (`BigWigs_*`/`DBM_*` inline handlers) operated without a surgical `issecretvalue` guard |
+| SV009 | secretable APIs inside `loadstring`/`RunScript` string literals (ForceTaint_Strong: ALWAYS secret there) |
 | SV010 | helper returning a raw secretable value (propagation) |
 | SV011 | `local issecretvalue = issecretvalue` without a pre-12.0 fallback |
 | SV012 | direct `COMBAT_LOG_EVENT[_UNFILTERED]` registration |
@@ -72,7 +74,6 @@ The secretable-API database (`db/`) is generated per game build from Blizzard's 
 ## Planned
 
 - npm package (`npx taintlint`), GitHub Action + badge (`secret-safe | 12.0.7`)
-- SV008/SV009: boss-mod callback args, `loadstring`/ForceTaint_Strong contexts
 - `taintlint explain "<BugSack error>"` — from error message to rule and fix
 - `taintlint --target <build>` — see what breaks in the next patch before it ships
 
