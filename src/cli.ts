@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { loadApiDb } from './apidb.ts';

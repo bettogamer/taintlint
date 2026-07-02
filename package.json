@@ -1,18 +1,29 @@
 {
   "name": "taintlint",
-  "version": "0.0.0",
-  "description": "Static analysis for WoW addon Lua — catch secret value errors before they hit the raid.",
+  "version": "0.1.0",
+  "description": "Static analysis for WoW addon Lua — catch secret value (12.0+) errors before they hit the raid.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bettogamer/taintlint.git"
+  },
+  "homepage": "https://github.com/bettogamer/taintlint#readme",
+  "bugs": "https://github.com/bettogamer/taintlint/issues",
   "bin": {
     "taintlint": "src/cli.ts"
   },
+  "files": [
+    "src/",
+    "db/",
+    "assets/logo.svg"
+  ],
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test \"test/*.test.ts\"",
     "lint": "node src/cli.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "keywords": [
     "wow",
@@ -22,7 +33,8 @@
     "lint",
     "static-analysis",
     "secret-values",
-    "taint"
+    "taint",
+    "midnight"
   ],
   "dependencies": {
     "luaparse": "^0.3.1"
