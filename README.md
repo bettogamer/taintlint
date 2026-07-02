@@ -10,13 +10,12 @@ on tainted execution paths, many APIs return values that cannot be used in arith
 comparisons, concatenation, or as table keys without throwing a Lua error — often only in
 combat, where you can't debug. taintlint finds those usages **statically**, in your editor or CI.
 
-**Status: v0.1 core, pre-release.** Working CLI, not yet published to npm. Requires Node ≥ 24
-(runs TypeScript natively).
+**[On npm](https://www.npmjs.com/package/taintlint)** — requires Node ≥ 20.
 
 ## Usage
 
 ```
-node src/cli.ts <addon-dir|file.toc|file.lua> [options]
+npx taintlint <addon-dir|file.toc|file.lua> [options]
 
 --format json          machine-readable output
 --min-severity <s>     error | warning | info (default: info)
