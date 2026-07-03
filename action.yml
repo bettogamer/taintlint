@@ -1,0 +1,44 @@
+name: 'taintlint'
+description: 'Lint World of Warcraft addon Lua for secret-value (12.0+) errors before they hit the raid'
+author: 'Betto'
+branding:
+  icon: 'eye-off'
+  color: 'purple'
+
+inputs:
+  path:
+    description: 'Addon directory, .toc or .lua file to lint'
+    required: false
+    default: '.'
+  min-severity:
+    description: 'Minimum severity to report: error | warning | info'
+    required: false
+    default: 'warning'
+  baseline:
+    description: 'Path to the baseline file (default: <path>/taintlint-baseline.json)'
+    required: false
+    default: ''
+  version:
+    description: 'taintlint version to run (npm semver or dist-tag)'
+    required: false
+    default: 'latest'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Register problem matcher
+      shell: bash
+      run: echo "::add-matcher::${{ github.action_path }}/.github/taintlint-matcher.json"
+    - name: Run taintlint
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_MIN_SEVERITY: ${{ inputs.min-severity }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        args=("$INPUT_PATH" --min-severity "$INPUT_MIN_SEVERITY")
+        if [ -n "$INPUT_BASELINE" ]; then
+          args+=(--baseline "$INPUT_BASELINE")
+        fi
+        npx --yes "taintlint@$INPUT_VERSION" "${args[@]}"

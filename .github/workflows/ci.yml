@@ -15,3 +15,12 @@ jobs:
       - run: npm ci
       - run: node node_modules/typescript/bin/tsc --noEmit
       - run: node --test "test/*.test.ts"
+
+  # Smoke test for the published composite action (keeps action.yml valid).
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          path: fixtures/sv011/pass.lua
