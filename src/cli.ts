@@ -5,6 +5,7 @@ import { loadApiDb } from './apidb.ts';
 import { lintSource } from './engine.ts';
 import { resolveTarget } from './toc.ts';
 import { fingerprint, loadBaseline, writeBaseline } from './baseline.ts';
+import { formatExplanation, matchRules } from './ruledocs.ts';
 import type { Finding, Severity } from './types.ts';
 
 interface Options {
@@ -28,13 +29,28 @@ function parseArgs(argv: string[]): Options {
     else if (!a.startsWith('--')) opts.target = a;
   }
   if (!opts.target) {
-    console.error('usage: taintlint <addon-dir|file.toc|file.lua> [--format json] [--min-severity error|warning|info] [--update-baseline] [--baseline path]');
+    console.error(
+      'usage: taintlint <addon-dir|file.toc|file.lua> [--format json] [--min-severity error|warning|info] [--update-baseline] [--baseline path]\n' +
+        '       taintlint explain "<BugSack error message>" | explain SV001'
+    );
     process.exit(2);
   }
   return opts;
 }
 
+function runExplain(argv: string[]): number {
+  const query = argv.join(' ').trim();
+  if (!query) {
+    console.error('usage: taintlint explain "<BugSack error message>" | explain SV001');
+    return 2;
+  }
+  const rules = matchRules(query);
+  console.log(formatExplanation(rules, query));
+  return rules.length > 0 ? 0 : 1;
+}
+
 export function run(argv: string[]): number {
+  if (argv[0] === 'explain') return runExplain(argv.slice(1));
   const opts = parseArgs(argv);
   const db = loadApiDb();
   const { root, interfaceVersion, luaFiles } = resolveTarget(opts.target);
