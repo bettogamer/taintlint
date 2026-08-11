@@ -15,6 +15,9 @@ North star: *no addon should ever discover a secret-value error in a raid.*
 3. **Never invent secret-value semantics.** The source of truth is the per-build API database
    extracted from `Blizzard_APIDocumentationGenerated` (via Gethe/wow-ui-source), plus
    https://warcraft.wiki.gg/wiki/Secret_Values. If the DB and an assumption disagree, the DB wins.
+   Since 12.1 Blizzard documents every predicate in `SecretPredicatesDocumentation.lua` (same
+   folder) — one sentence per `SecretWhen*`/`SecretIn*`/`Requires*` flag. Read it before
+   reasoning about a flag; it is the authority for the heuristics in `TOKEN_EXEMPT_PREDICATES`.
 4. The core is **offline static analysis**. No runtime/in-game component in this repo (a
    separate minimal companion may exist post-v1). No general Lua linting — luacheck's job.
 

@@ -12,6 +12,25 @@ const GUARD_FNS = new Set(['issecretvalue', 'issecrettable', 'canaccessvalue', '
 const SAFE_UNIT_TOKENS =
   /^(player|pet|vehicle|party[1-4]|partypet[1-4]|raid([1-9]|[1-3][0-9]|40)|raidpet([1-9]|[1-3][0-9]|40))$/i;
 
+// Units under the player's *direct* control — a strictly narrower set than the
+// identity whitelist: a party member is player-controlled but not player-driven.
+const CONTROLLED_UNIT_TOKENS = /^(player|pet|vehicle)$/i;
+
+// Secrecy predicates that a literal unit-token argument can rule out, mapped to the
+// tokens they spare. Semantics are Blizzard's, from SecretPredicatesDocumentation.lua:
+//   SecretWhenUnitIdentityRestricted      "secret when the unit isn't player-controlled
+//                                          or in the party/raid"
+//   SecretWhenUnitNameIdentityRestricted  identity rules, further relaxed in PvP for
+//                                          player units (12.1 split of the above)
+//   SecretWhenUnitPossessionRestricted    "based on aura secrecy, except for unit tokens
+//                                          under the player's direct control"
+// Any predicate NOT listed here cannot be discharged from the call site.
+const TOKEN_EXEMPT_PREDICATES = new Map<string, RegExp>([
+  ['SecretWhenUnitIdentityRestricted', SAFE_UNIT_TOKENS],
+  ['SecretWhenUnitNameIdentityRestricted', SAFE_UNIT_TOKENS],
+  ['SecretWhenUnitPossessionRestricted', CONTROLLED_UNIT_TOKENS],
+]);
+
 // Nodes that open a lexical scope for local declarations.
 const SCOPE_NODES = new Set([
   'Chunk',
@@ -192,16 +211,16 @@ export class RuleContext {
     const entry = this.db.functions.get(name);
     if (!entry) return null;
     if (entry.tier === 'conditional') {
-      // Unit-token heuristic, identity family only: if the ONLY secrecy condition
-      // is unit identity and the unit argument is a literal player-controlled
-      // token, the value can never be secret. Validated against MRT (spike S3).
+      // Unit-token heuristic: if EVERY secrecy condition is one a literal unit token
+      // can discharge, and the argument is such a token, the value can never be
+      // secret. Validated against MRT (spike S3). Each predicate spares its own set
+      // of tokens, so a call must clear all of them.
       const conditions = Object.keys(entry.flags).filter(
         (k) => k === 'ConditionalSecret' || k.startsWith('SecretWhen') || k.startsWith('SecretIn')
       );
-      const identityOnly = conditions.every((k) => k === 'SecretWhenUnitIdentityRestricted');
-      if (identityOnly) {
+      if (conditions.every((k) => TOKEN_EXEMPT_PREDICATES.has(k))) {
         const unit = stringLiteral(firstArgument(node));
-        if (unit && SAFE_UNIT_TOKENS.test(unit)) return null;
+        if (unit && conditions.every((k) => TOKEN_EXEMPT_PREDICATES.get(k)!.test(unit))) return null;
       }
     }
     return { api: name, tier: entry.tier };
