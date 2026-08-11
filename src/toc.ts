@@ -29,8 +29,15 @@ export function filesFromToc(tocPath: string): AddonFiles {
   let interfaceVersion: string | null = null;
   for (let line of readFileSync(tocPath, 'utf8').split(/\r?\n/)) {
     line = line.trim();
-    const meta = /^##\s*Interface\s*:\s*(\d+)/.exec(line);
-    if (meta) interfaceVersion = meta[1]!;
+    // Multi-flavor tocs list every supported client ("## Interface: 11508, 40402,
+    // 120007"). Keep the highest: that is the retail build, the only one where
+    // secret values exist, and the surface we must lint against.
+    const meta = /^##\s*Interface\s*:\s*([\d,\s]+)/.exec(line);
+    if (meta) {
+      for (const n of meta[1]!.match(/\d+/g) ?? []) {
+        if (interfaceVersion === null || Number(n) > Number(interfaceVersion)) interfaceVersion = n;
+      }
+    }
     if (line.startsWith('#') || line === '') continue;
     const ref = join(root, line.replaceAll('\\', '/'));
     if (line.toLowerCase().endsWith('.lua')) {

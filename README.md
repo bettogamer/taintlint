@@ -17,6 +17,7 @@ combat, where you can't debug. taintlint finds those usages **statically**, in y
 ```
 npx taintlint <addon-dir|file.toc|file.lua> [options]
 
+--target <build>       analyse against a game version (12.1.0, or 120100)
 --format json          machine-readable output
 --min-severity <s>     error | warning | info (default: info)
 --update-baseline      freeze current findings; CI then fails only on NEW ones
@@ -24,6 +25,15 @@ npx taintlint <addon-dir|file.toc|file.lua> [options]
 ```
 
 Exit code 1 when non-baselined `error`-severity findings exist.
+
+By default an addon is analysed against the API surface it ships for: the highest
+`## Interface:` in its `.toc` selects the database (multi-flavor tocs resolve to their
+retail build). Point `--target` at a newer build to see what the next patch breaks
+**before** it goes live:
+
+```
+npx taintlint ./MyAddon --target 12.1.0
+```
 
 Example, against a real addon:
 
@@ -104,7 +114,6 @@ The secretable-API database (`db/`) is generated per game build from Blizzard's 
 
 ## Planned
 
-- `taintlint --target <build>` — see what breaks in the next patch before it ships
 - Publishing the per-build secretable-API database as a standalone artifact
 
 ## License
