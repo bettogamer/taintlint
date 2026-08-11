@@ -18,6 +18,17 @@ export interface ApiEntry {
   flags: Record<string, unknown>;
 }
 
+/**
+ * Blizzard's documentation for one secrecy flag, from
+ * `SecretPredicatesDocumentation.lua` (12.1+). `Secret` predicates make a value
+ * secret; `Precondition` ones gate the call itself.
+ */
+export interface PredicateDoc {
+  type: 'Secret' | 'Precondition';
+  failureMode?: string;
+  documentation: string[];
+}
+
 // luaparse AST nodes, loosely typed: we only rely on `type`, `loc` and a handful
 // of shape-specific fields, and the walker treats everything else generically.
 export interface LuaNode {

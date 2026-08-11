@@ -55,7 +55,23 @@ function fields(tableNode) {
   return out;
 }
 
-const db = { build: `${version} (${build})`, source: `Gethe/wow-ui-source@${ref}`, functions: {}, events: {} };
+/** Documentation = { "sentence", ... } — a table of strings, not a scalar. */
+function stringList(node) {
+  if (!node || node.type !== 'TableConstructorExpression') return [];
+  return node.fields
+    .filter((f) => f.type === 'TableValue' && f.value.type === 'StringLiteral')
+    .map((f) => f.value.raw.slice(1, -1));
+}
+
+const db = {
+  build: `${version} (${build})`,
+  source: `Gethe/wow-ui-source@${ref}`,
+  functions: {},
+  events: {},
+  // Blizzard's own prose for each secrecy flag. Empty before 12.1, which is the
+  // first build to ship SecretPredicatesDocumentation.lua.
+  predicates: {},
+};
 let parseFailures = 0;
 
 for (const name of readdirSync(DOCS).filter((n) => n.endsWith('.lua'))) {
@@ -73,7 +89,7 @@ for (const name of readdirSync(DOCS).filter((n) => n.endsWith('.lua'))) {
     if (node.type === 'TableConstructorExpression') {
       const f = fields(node);
       if (typeof f.Namespace === 'string' && !namespace) namespace = f.Namespace;
-      if (f.Name && (f.Type === 'Function' || f.Type === 'Event')) entries.push(f);
+      if (f.Name && ['Function', 'Event', 'Secret', 'Precondition'].includes(f.Type)) entries.push(f);
     }
     for (const k of Object.keys(node)) {
       const v = node[k];
@@ -82,6 +98,14 @@ for (const name of readdirSync(DOCS).filter((n) => n.endsWith('.lua'))) {
     }
   })(ast);
   for (const e of entries) {
+    if (e.Type === 'Secret' || e.Type === 'Precondition') {
+      db.predicates[e.Name] = {
+        type: e.Type,
+        ...(e.FailureMode ? { failureMode: e.FailureMode } : {}),
+        documentation: stringList(e.Documentation),
+      };
+      continue;
+    }
     const secretKeys = Object.keys(e).filter((k) => /Secret/.test(k));
     const hazard = secretKeys.filter((k) => !(k === 'SecretArguments' && e[k] === 'NotAllowed'));
     if (hazard.length === 0) continue;
@@ -98,7 +122,10 @@ const previousFile = readdirSync(DB_DIR).filter((f) => /^apidb-.*\.json$/.test(f
 const outFile = join(DB_DIR, `apidb-${version}-${build}.json`);
 writeFileSync(outFile, JSON.stringify(db, null, 1));
 console.log(`\nwrote ${outFile}`);
-console.log(`functions: ${Object.keys(db.functions).length}, events: ${Object.keys(db.events).length}, parse failures: ${parseFailures}`);
+console.log(
+  `functions: ${Object.keys(db.functions).length}, events: ${Object.keys(db.events).length}, ` +
+    `predicates: ${Object.keys(db.predicates).length}, parse failures: ${parseFailures}`
+);
 
 if (previousFile && join(DB_DIR, previousFile) !== outFile) {
   const prev = JSON.parse(readFileSync(join(DB_DIR, previousFile), 'utf8'));
@@ -119,6 +146,11 @@ if (previousFile && join(DB_DIR, previousFile) !== outFile) {
   const newFlags = [...vocab(db.functions)].filter((f) => !vocab(prev.functions).has(f));
   if (newFlags.length) {
     console.log(`\n  ⚠ NEW FLAG NAMES (review src/rules.ts + src/apidb.ts tier logic!): ${newFlags.join(', ')}`);
+    // Blizzard documents each predicate since 12.1 — never guess these semantics.
+    for (const f of newFlags) {
+      const doc = db.predicates[f]?.documentation?.[0];
+      console.log(`      ${f}: ${doc ?? '(undocumented — check the wiki before touching tier logic)'}`);
+    }
   }
 }
 console.log(`\nnext: review the diff, run tests + benchmark, then commit atomically:\n  git add db/ && git commit -m "db: ${version} (${build})"`);

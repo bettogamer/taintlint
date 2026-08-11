@@ -233,9 +233,26 @@ export class RuleContext {
     this.findings.push({ rule, severity, file: this.file, line: loc.line, column: loc.column + 1, api, message });
   }
 
+  /**
+   * When exactly one flag makes a value secret and Blizzard documents it, say
+   * *when* rather than just "conditionally secret" — that sentence is usually the
+   * whole answer to "does this apply to me?".
+   */
+  private conditionNote(api: string): string {
+    const flags = this.db.functions.get(api)?.flags ?? {};
+    const conditions = Object.keys(flags).filter((k) => k.startsWith('SecretWhen') || k.startsWith('SecretIn'));
+    if (conditions.length !== 1) return 'conditionally secret';
+    const doc = this.db.predicates.get(conditions[0]!)?.documentation[0];
+    if (!doc) return 'conditionally secret';
+    // "Guarded APIs and events produce secret values when X. Other sentence." → "secret when X"
+    const body = doc.replace(/^Guarded APIs(?: and events)? produce secret values\s*/i, '');
+    const first = body.split('. ')[0]!.replace(/\.$/, '');
+    return body === doc || first.length > 100 ? 'conditionally secret' : `secret ${first}`;
+  }
+
   private reportHit(rule: string, node: LuaNode, hit: SecretableHit, message: string, severity?: Severity): void {
     const sev = severity ?? (hit.tier === 'unconditional' ? 'error' : 'warning');
-    const tierNote = hit.tier === 'conditional' ? ' (conditionally secret)' : '';
+    const tierNote = hit.tier === 'conditional' ? ` (${this.conditionNote(hit.api)})` : '';
     this.report(rule, node, hit.api, `${message}${tierNote}`, sev);
   }
 

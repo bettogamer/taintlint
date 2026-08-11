@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { basename } from 'node:path';
-import { dbForVersion, latestDbPath, shippedDbs, versionKey } from '../src/apidb.ts';
+import { dbForVersion, latestDbPath, loadApiDb, shippedDbs, versionKey } from '../src/apidb.ts';
+import { lintSource } from '../src/engine.ts';
 
 test('versionKey accepts toc interface numbers and dotted versions', () => {
   assert.equal(versionKey('120100'), 120100);
@@ -33,4 +34,20 @@ test('a 12.0.7 addon is not analysed against the 12.1 surface', () => {
   // silently re-target addons that declare an older interface.
   const chosen = dbForVersion(versionKey('120007'));
   assert.equal(basename(chosen.path), 'apidb-12.0.7-68275.json');
+});
+
+test('a conditional finding quotes the documented secrecy condition', () => {
+  const db = loadApiDb(dbForVersion(versionKey('12.1.0')).path);
+  const [finding, ...rest] = lintSource('if UnitClass("target") == "PALADIN" then end', 't.lua', db);
+  assert.equal(rest.length, 0);
+  assert.match(finding!.message, /secret when the unit isn't player-controlled or in the party\/raid/);
+});
+
+test('builds without a predicate table fall back to the generic note', () => {
+  // 12.0.7 predates SecretPredicatesDocumentation.lua; the wording degrades, the
+  // finding does not disappear.
+  const db = loadApiDb(dbForVersion(versionKey('12.0.7')).path);
+  assert.equal(db.predicates.size, 0);
+  const [finding] = lintSource('if UnitName("target") == "Bob" then end', 't.lua', db);
+  assert.match(finding!.message, /\(conditionally secret\)$/);
 });

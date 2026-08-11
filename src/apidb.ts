@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ApiEntry, Tier } from './types.ts';
+import type { ApiEntry, PredicateDoc, Tier } from './types.ts';
 
 export interface ApiDb {
   build: string;
@@ -9,6 +9,8 @@ export interface ApiDb {
   functions: Map<string, ApiEntry>;
   /** event literal name → raw flags (SecretPayloads etc.) */
   events: Map<string, Record<string, unknown>>;
+  /** flag name → Blizzard's own prose (12.1+; empty for older builds) */
+  predicates: Map<string, PredicateDoc>;
 }
 
 function tierOf(flags: Record<string, unknown>): Tier | null {
@@ -84,11 +86,17 @@ export function loadApiDb(path: string = latestDbPath()): ApiDb {
     build: string;
     functions: Record<string, Record<string, unknown>>;
     events: Record<string, Record<string, unknown>>;
+    predicates?: Record<string, PredicateDoc>;
   };
   const functions = new Map<string, ApiEntry>();
   for (const [name, flags] of Object.entries(raw.functions)) {
     const tier = tierOf(flags);
     if (tier) functions.set(name, { tier, flags });
   }
-  return { build: raw.build, functions, events: new Map(Object.entries(raw.events)) };
+  return {
+    build: raw.build,
+    functions,
+    events: new Map(Object.entries(raw.events)),
+    predicates: new Map(Object.entries(raw.predicates ?? {})),
+  };
 }

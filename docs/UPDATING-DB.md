@@ -20,10 +20,13 @@ previous db**: newly secretable APIs, APIs no longer flagged, changed flags.
    announcement post: "these APIs break in <version>").
 2. **`⚠ NEW FLAG NAMES`** — Blizzard added a flag the engine has never seen. STOP and review:
    - `src/apidb.ts` `tierOf()` — does the new flag classify as unconditional/conditional?
-   - `src/rules.ts` — does any heuristic (e.g. the unit-token identity whitelist) need to know
-     about it?
-   Never guess semantics: check the flag's usage in the docs files and the wiki
-   ([Secret Values](https://warcraft.wiki.gg/wiki/Secret_Values)) first.
+   - `src/rules.ts` `TOKEN_EXEMPT_PREDICATES` — can a literal unit token rule the condition
+     out, and for which tokens? A predicate absent from that map is never discharged.
+   Never guess semantics. Since 12.1 the script prints Blizzard's own sentence for each new
+   flag (from `SecretPredicatesDocumentation.lua`, ingested into `db.predicates`); that
+   sentence is the authority. The wiki
+   ([Secret Values](https://warcraft.wiki.gg/wiki/Secret_Values)) is the fallback for
+   undocumented flags.
 3. **Removed/relaxed APIs** — fine, the diff records it; no action.
 
 ## 3. Validate
