@@ -5,7 +5,7 @@ Three canonical variants (design approved 2026-07-01), all with the taintlint lo
 hosting is needed. Regenerate the URLs for any game version with:
 
 ```
-node scripts/badge-urls.mjs 12.0.7
+node scripts/badge-urls.mjs 12.1.0
 ```
 
 | Variant | Audience | Style |

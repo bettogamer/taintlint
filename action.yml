@@ -18,6 +18,10 @@ inputs:
     description: 'Path to the baseline file (default: <path>/taintlint-baseline.json)'
     required: false
     default: ''
+  target:
+    description: 'Game version to analyse against, e.g. 12.1.0 (default: the addon''s ## Interface:)'
+    required: false
+    default: ''
   version:
     description: 'taintlint version to run (npm semver or dist-tag)'
     required: false
@@ -35,10 +39,14 @@ runs:
         INPUT_PATH: ${{ inputs.path }}
         INPUT_MIN_SEVERITY: ${{ inputs.min-severity }}
         INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_TARGET: ${{ inputs.target }}
         INPUT_VERSION: ${{ inputs.version }}
       run: |
         args=("$INPUT_PATH" --min-severity "$INPUT_MIN_SEVERITY")
         if [ -n "$INPUT_BASELINE" ]; then
           args+=(--baseline "$INPUT_BASELINE")
+        fi
+        if [ -n "$INPUT_TARGET" ]; then
+          args+=(--target "$INPUT_TARGET")
         fi
         npx --yes "taintlint@$INPUT_VERSION" "${args[@]}"
