@@ -110,7 +110,7 @@ L1 findings report one severity step below L0 (warning/info), so they never brea
 their own.
 
 The secretable-API database (`db/`) is generated per game build from Blizzard's own
-`Blizzard_APIDocumentationGenerated`. Current: 12.1.0 (69214); 12.0.7 (68275) also shipped.
+`Blizzard_APIDocumentationGenerated`. Current: 12.1.5 (70391); 12.1.0 (69214) and 12.0.7 (68275) also shipped.
 
 ## Planned
 
