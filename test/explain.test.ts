@@ -23,6 +23,8 @@ test('explain: real BugSack messages resolve to the right rule', () => {
     ['attempt to concatenate a secret number value', 'SV003'],
     ['attempt to get length of a secret value', 'SV004'],
     ['attempt to store a secret value as a table key', 'SV005'],
+    // Observed first-hand (12.1.5, /run with UnitHealth("player") as key):
+    ['attempted to perform indexed assignment on a table that cannot be indexed with secret keys', 'SV005'],
     // Observed in the wild (Altoholic #96):
     ["attempt to index local 'line' (a secret value)", 'SV006'],
     ['attempt to call a secret value', 'SV007'],

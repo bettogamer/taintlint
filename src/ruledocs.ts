@@ -60,7 +60,7 @@ export const RULE_DOCS: RuleDoc[] = [
     id: 'SV005',
     name: 'secretable value as a table key',
     error: 'attempt to store a secret value as a table key',
-    matches: [/secret value as a table key/i, /table index is .*secret/i],
+    matches: [/secret value as a table key/i, /table index is .*secret/i, /indexed with secret keys/i],
     cause:
       'Storing a secret as a table VALUE is allowed; using it as a KEY is not (key lookup reveals equality). Classic case: seen[UnitGUID(unit)] = true.',
     fix: 'Guard with issecretvalue(v); if secret, re-key with non-secret data (spellId, counter) or skip the cache for that unit.',
