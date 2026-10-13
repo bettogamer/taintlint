@@ -19,7 +19,7 @@ inputs:
     required: false
     default: ''
   target:
-    description: 'Game version to analyse against, e.g. 12.1.0 (default: the addon''s ## Interface:)'
+    description: 'Game version to analyse against, e.g. 12.1.5 (default: the addon''s ## Interface:)'
     required: false
     default: ''
   version:

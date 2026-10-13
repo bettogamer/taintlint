@@ -27,7 +27,7 @@ addon repos keep their `.toc`.
 | `path` | `.` | Addon directory, `.toc` or `.lua` file to lint |
 | `min-severity` | `warning` | Minimum severity to report: `error` \| `warning` \| `info` |
 | `baseline` | `<path>/taintlint-baseline.json` | Baseline file location |
-| `target` | the addon's `## Interface:` | Game version to analyse against, e.g. `12.1.0` |
+| `target` | the addon's `## Interface:` | Game version to analyse against, e.g. `12.1.5` |
 | `version` | `latest` | taintlint version to run (npm semver or dist-tag) |
 
 Example with everything pinned:
@@ -37,7 +37,7 @@ Example with everything pinned:
   with:
     path: MyAddon
     min-severity: error
-    version: 0.3.0
+    version: 0.4.0
 ```
 
 ### Checking the next patch before it ships
@@ -49,7 +49,7 @@ breaks while there is still time to fix it:
 - uses: bettogamer/taintlint@v0
   continue-on-error: true
   with:
-    target: 12.1.0
+    target: 12.1.5
 ```
 
 ## Adopting on an existing addon
@@ -72,7 +72,7 @@ CurseForge description:
 [![taintlint](https://github.com/<you>/<addon>/actions/workflows/taintlint.yml/badge.svg)](https://github.com/<you>/<addon>/actions/workflows/taintlint.yml)
 ```
 
-See [BADGES.md](BADGES.md) for the shields.io variants (`secret-safe | 12.1.0`).
+See [BADGES.md](BADGES.md) for the shields.io variants (`secret-safe | 12.1.5`).
 
 ## Notes
 

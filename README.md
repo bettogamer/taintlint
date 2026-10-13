@@ -17,7 +17,7 @@ combat, where you can't debug. taintlint finds those usages **statically**, in y
 ```
 npx taintlint <addon-dir|file.toc|file.lua> [options]
 
---target <build>       analyse against a game version (12.1.0, or 120100)
+--target <build>       analyse against a game version (12.1.5, or 120105)
 --format json          machine-readable output
 --min-severity <s>     error | warning | info (default: info)
 --update-baseline      freeze current findings; CI then fails only on NEW ones
@@ -32,7 +32,7 @@ retail build). Point `--target` at a newer build to see what the next patch brea
 **before** it goes live:
 
 ```
-npx taintlint ./MyAddon --target 12.1.0
+npx taintlint ./MyAddon --target 12.1.5
 ```
 
 Example, against a real addon:
