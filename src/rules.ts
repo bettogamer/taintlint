@@ -31,6 +31,13 @@ const TOKEN_EXEMPT_PREDICATES = new Map<string, RegExp>([
   ['SecretWhenUnitPossessionRestricted', CONTROLLED_UNIT_TOKENS],
 ]);
 
+// Secrecy predicates that depend only on the subject table passed as first argument:
+//   SecretWhenLuaTableHasSecretKeys       "secret values if the subject Lua table
+//                                          contains any secret keys" (12.1.5 table.count…)
+// Discharged unless that argument is itself a tracked secret value or secretable call:
+// an addon's own table is not assumed to hold secret keys (precision over coverage).
+const TABLE_ARG_PREDICATES = new Set(['SecretWhenLuaTableHasSecretKeys']);
+
 // Nodes that open a lexical scope for local declarations.
 const SCOPE_NODES = new Set([
   'Chunk',
@@ -211,17 +218,21 @@ export class RuleContext {
     const entry = this.db.functions.get(name);
     if (!entry) return null;
     if (entry.tier === 'conditional') {
-      // Unit-token heuristic: if EVERY secrecy condition is one a literal unit token
-      // can discharge, and the argument is such a token, the value can never be
-      // secret. Validated against MRT (spike S3). Each predicate spares its own set
-      // of tokens, so a call must clear all of them.
+      // If EVERY secrecy condition is discharged at the call site, the value can never
+      // be secret. Unit-token predicates (validated against MRT, spike S3) each spare
+      // their own set of literal tokens; table-argument predicates clear unless the
+      // subject is a known secret.
       const conditions = Object.keys(entry.flags).filter(
         (k) => k === 'ConditionalSecret' || k.startsWith('SecretWhen') || k.startsWith('SecretIn')
       );
-      if (conditions.every((k) => TOKEN_EXEMPT_PREDICATES.has(k))) {
-        const unit = stringLiteral(firstArgument(node));
-        if (unit && conditions.every((k) => TOKEN_EXEMPT_PREDICATES.get(k)!.test(unit))) return null;
-      }
+      const arg = firstArgument(node);
+      const unit = stringLiteral(arg);
+      const discharged = (k: string): boolean => {
+        const tokens = TOKEN_EXEMPT_PREDICATES.get(k);
+        if (tokens) return unit !== null && tokens.test(unit);
+        return TABLE_ARG_PREDICATES.has(k) && !this.taintedLocal(arg) && !this.secretableCall(arg);
+      };
+      if (conditions.every(discharged)) return null;
     }
     return { api: name, tier: entry.tier };
   }
