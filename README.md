@@ -10,6 +10,9 @@ on tainted execution paths, many APIs return values that cannot be used in arith
 comparisons, concatenation, or as table keys without throwing a Lua error — often only in
 combat, where you can't debug. taintlint finds those usages **statically**, in your editor or CI.
 
+Supported clients: **retail** (12.0.7, 12.1.0, 12.1.5) and **WoW Forever** (1.60.1), each
+checked against its own API database. Classic clients have no secret values.
+
 **[On npm](https://www.npmjs.com/package/taintlint)** — requires Node ≥ 20.
 
 ## Usage
