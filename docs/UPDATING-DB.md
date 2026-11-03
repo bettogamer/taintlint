@@ -8,7 +8,15 @@ build lands (the api-db is per-build; taintlint is only as current as its newest
 ```
 node scripts/update-db.mjs              # live branch (default)
 node scripts/update-db.mjs --ref ptr    # PTR build
+node scripts/update-db.mjs --ref forever  # WoW Forever (1.60.x)
 ```
+
+Each client is a **flavor** with its own db series: mainline (`live`/`ptr`/`beta`) writes
+`db/apidb-<version>-<build>.json`, Forever writes `db/apidb-forever-<version>-<build>.json`.
+The diff is always against the previous db of the same flavor, and the commit subject
+names non-mainline flavors: `db: forever 1.60.1 (70755)`. Classic branches have no secret
+values and are rejected. A new client with secret values needs its interface range in
+`src/apidb.ts` `flavorOf()` and its branch in the script's `FLAVOR_OF_REF` first.
 
 The script sparse-clones/updates `Gethe/wow-ui-source`, detects the version/build from the
 commit subject, writes `db/apidb-<version>-<build>.json`, and prints a **diff against the
@@ -40,6 +48,8 @@ Then re-run the benchmark corpora (paths are machine-specific, see `CLAUDE.local
 - **MRT** must still produce **0 new errors** vs its previous run (the 6 known semantic
   findings are expected; anything new needs manual classification before release).
 - WeakAuras 5.21.1 / Beacon as regression references.
+- For a Forever db: the Forever corpus (see `CLAUDE.local.md`) must stay at 0 errors, and
+  MRT must be unchanged (a Forever db must never affect retail results).
 
 If a fixture breaks because Blizzard changed an API's flags (e.g. `UnitHealth` stops being
 unconditional), the fixture — the contract — is what gets updated, consciously, in the same

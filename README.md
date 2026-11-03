@@ -26,13 +26,15 @@ npx taintlint <addon-dir|file.toc|file.lua> [options]
 
 Exit code 1 when non-baselined `error`-severity findings exist.
 
-By default an addon is analysed against the API surface it ships for: the highest
-`## Interface:` in its `.toc` selects the database (multi-flavor tocs resolve to their
-retail build). Point `--target` at a newer build to see what the next patch breaks
-**before** it goes live:
+By default an addon is analysed against the API surface it ships for: the
+`## Interface:` in its `.toc` selects the database. Multi-flavor tocs resolve to their
+retail build, else to WoW Forever (`16001`); Classic clients have no secret values and
+are reported as nothing to check. Point `--target` at a newer build to see what the next
+patch breaks **before** it goes live, or at another client:
 
 ```
 npx taintlint ./MyAddon --target 12.1.5
+npx taintlint ./MyAddon --target 1.60.1   # WoW Forever
 ```
 
 Example, against a real addon:
@@ -111,6 +113,7 @@ their own.
 
 The secretable-API database (`db/`) is generated per game build from Blizzard's own
 `Blizzard_APIDocumentationGenerated`. Current: 12.1.5 (70391); 12.1.0 (69214) and 12.0.7 (68275) also shipped.
+WoW Forever: 1.60.1 (70755).
 
 ## Planned
 
