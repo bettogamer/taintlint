@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname, extname } from 'node:path';
+import { flavorOf } from './apidb.ts';
 
 export interface AddonFiles {
   root: string;
@@ -22,6 +23,14 @@ function fromXml(xmlPath: string, seen: Set<string>, out: string[]): void {
   }
 }
 
+const FLAVOR_RANK = { mainline: 2, forever: 1 } as const;
+
+/** Orders interface numbers: flavor preference first, then version. */
+function tocRank(key: number): number {
+  const flavor = flavorOf(key);
+  return (flavor ? FLAVOR_RANK[flavor] : 0) * 1e7 + key;
+}
+
 export function filesFromToc(tocPath: string): AddonFiles {
   const root = dirname(tocPath);
   const out: string[] = [];
@@ -29,13 +38,14 @@ export function filesFromToc(tocPath: string): AddonFiles {
   let interfaceVersion: string | null = null;
   for (let line of readFileSync(tocPath, 'utf8').split(/\r?\n/)) {
     line = line.trim();
-    // Multi-flavor tocs list every supported client ("## Interface: 11508, 40402,
-    // 120007"). Keep the highest: that is the retail build, the only one where
-    // secret values exist, and the surface we must lint against.
+    // Multi-flavor tocs list every supported client ("## Interface: 11508, 16001,
+    // 120007"). Keep the retail build if listed, else WoW Forever: the clients that
+    // have secret values, retail first (`--target` picks another). Only then the
+    // highest Classic number, which the CLI reports as nothing to check.
     const meta = /^##\s*Interface\s*:\s*([\d,\s]+)/.exec(line);
     if (meta) {
       for (const n of meta[1]!.match(/\d+/g) ?? []) {
-        if (interfaceVersion === null || Number(n) > Number(interfaceVersion)) interfaceVersion = n;
+        if (interfaceVersion === null || tocRank(Number(n)) > tocRank(Number(interfaceVersion))) interfaceVersion = n;
       }
     }
     if (line.startsWith('#') || line === '') continue;

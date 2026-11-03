@@ -29,3 +29,13 @@ test('repeated Interface lines keep the highest', () => {
 test('a toc without an Interface line reports none', () => {
   assert.equal(toc('## Title: Addon\nAddon.lua\n').interfaceVersion, null);
 });
+
+test('retail wins over WoW Forever in a multi-flavor toc', () => {
+  // 16001 (Forever) is lower than 120105 but higher than any Classic number.
+  assert.equal(toc('## Interface: 16001, 120105, 11508\nAddon.lua\n').interfaceVersion, '120105');
+});
+
+test('WoW Forever wins over Classic flavors with higher interface numbers', () => {
+  // Mists (50503) outnumbers Forever (16001) but has no secret values to check.
+  assert.equal(toc('## Interface: 11508, 16001, 50503\nAddon.lua\n').interfaceVersion, '16001');
+});

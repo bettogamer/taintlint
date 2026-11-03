@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { dbForVersion, loadApiDb, versionKey } from './apidb.ts';
+import { dbForVersion, flavorOf, loadApiDb, versionKey } from './apidb.ts';
 import { lintSource } from './engine.ts';
 import { resolveTarget } from './toc.ts';
 import { fingerprint, loadBaseline, writeBaseline } from './baseline.ts';
@@ -72,7 +72,23 @@ export function run(argv: string[]): number {
   // The addon's own `## Interface:` picks the db, so it is checked against the API
   // surface it ships for; `--target` overrides it to look at a future build.
   const wanted = versionKey(opts.gameVersion ?? interfaceVersion);
-  const db = loadApiDb(dbForVersion(wanted).path);
+  const shipped = dbForVersion(wanted);
+  if (!shipped) {
+    // Classic flavors have no secret values; never lint them against another
+    // flavor's surface (that would report errors that cannot happen in-game).
+    const spec = opts.gameVersion ?? interfaceVersion;
+    const why =
+      flavorOf(wanted!) === null
+        ? `Interface ${spec} is a Classic client, which has no secret values`
+        : `no api-db for the client of Interface ${spec} ships with this version of taintlint`;
+    if (opts.format === 'json') {
+      console.log(JSON.stringify({ build: null, interfaceVersion, skipped: why, findings: [], baselined: 0 }, null, 1));
+    } else {
+      console.log(`taintlint: nothing to check — ${why}.`);
+    }
+    return 0;
+  }
+  const db = loadApiDb(shipped.path);
 
   let findings: Finding[] = [];
   for (const file of luaFiles) {

@@ -1,6 +1,7 @@
 // Regenerate the secretable-API database from Blizzard_APIDocumentationGenerated.
-// Usage: node scripts/update-db.mjs [--ref live|ptr|beta] [--source <wow-ui-source dir>]
-// Writes db/apidb-<version>-<build>.json and prints a diff vs the previous db.
+// Usage: node scripts/update-db.mjs [--ref live|ptr|beta|forever] [--source <wow-ui-source dir>]
+// Writes db/apidb-<version>-<build>.json (mainline) or db/apidb-<flavor>-<version>-<build>.json,
+// and prints a diff vs the previous db of the same flavor.
 import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -18,6 +19,11 @@ function argValue(name, fallback) {
   return i >= 0 ? args[i + 1] : fallback;
 }
 const ref = argValue('--ref', 'live');
+// Clients with secret values. Classic branches (classic, classic_era, …) have none.
+const FLAVOR_OF_REF = { live: 'mainline', ptr: 'mainline', ptr2: 'mainline', beta: 'mainline', forever: 'forever' };
+const flavor = FLAVOR_OF_REF[ref];
+if (!flavor) throw new Error(`unsupported --ref "${ref}": expected one of ${Object.keys(FLAVOR_OF_REF).join(', ')}`);
+const prefix = flavor === 'mainline' ? 'apidb-' : `apidb-${flavor}-`;
 let source = argValue('--source', null);
 
 if (!source) {
@@ -65,6 +71,7 @@ function stringList(node) {
 
 const db = {
   build: `${version} (${build})`,
+  flavor,
   source: `Gethe/wow-ui-source@${ref}`,
   functions: {},
   events: {},
@@ -118,8 +125,18 @@ for (const name of readdirSync(DOCS).filter((n) => n.endsWith('.lua'))) {
 
 // ---- diff against the previous shipped db -----------------------------------
 
-const previousFile = readdirSync(DB_DIR).filter((f) => /^apidb-.*\.json$/.test(f)).sort().pop();
-const outFile = join(DB_DIR, `apidb-${version}-${build}.json`);
+// Same flavor only, ordered by version (a lexical sort would put 1.60 before 12.0).
+const SAME_FLAVOR = new RegExp(`^${prefix}(\\d+)\\.(\\d+)\\.(\\d+)-\\d+\\.json$`);
+const keyOf = (f) => {
+  const [, a, b, c] = SAME_FLAVOR.exec(f);
+  return Number(a) * 10000 + Number(b) * 100 + Number(c);
+};
+const outName = `${prefix}${version}-${build}.json`;
+const previousFile = readdirSync(DB_DIR)
+  .filter((f) => SAME_FLAVOR.test(f) && f !== outName)
+  .sort((a, b) => keyOf(a) - keyOf(b))
+  .pop();
+const outFile = join(DB_DIR, outName);
 writeFileSync(outFile, JSON.stringify(db, null, 1));
 console.log(`\nwrote ${outFile}`);
 console.log(
@@ -153,4 +170,4 @@ if (previousFile && join(DB_DIR, previousFile) !== outFile) {
     }
   }
 }
-console.log(`\nnext: review the diff, run tests + benchmark, then commit atomically:\n  git add db/ && git commit -m "db: ${version} (${build})"`);
+console.log(`\nnext: review the diff, run tests + benchmark, then commit atomically:\n  git add db/ && git commit -m "db: ${flavor === 'mainline' ? '' : flavor + ' '}${version} (${build})"`);
