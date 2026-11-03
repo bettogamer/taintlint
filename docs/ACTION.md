@@ -37,7 +37,7 @@ Example with everything pinned:
   with:
     path: MyAddon
     min-severity: error
-    version: 0.4.0
+    version: 0.5.0
 ```
 
 ### Checking the next patch before it ships
